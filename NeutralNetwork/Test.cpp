@@ -90,24 +90,6 @@ void Test2()
     }
     network.Display();
 }
-double Average(vector<double>& vec)
-{
-    double sum = 0.0;
-    for (double item : vec)
-    {
-        sum = sum + item;
-    }
-    return sum / static_cast<double>(vec.size());
-}
-vector<double> Subtrac(vector<double>& x, vector<double> y)
-{
-    vector<double> result(x.size());
-    for (size_t i = 0; i < x.size(); i++)
-    {
-        result.at(i) = x.at(i) - y.at(i);
-    }
-    return result;
-}
 void Test3()
 {
     vector<double> x1 = {-0.71428571, -0.71428571, -0.14285714,

@@ -1,4 +1,4 @@
-#include "BPNeutralNetwork.h"
+#include "BPNeuralNetwork.h"
 #include "Layer.h"
 #include "Matrix.h"
 #include "Test.h"
@@ -8,6 +8,6 @@ using namespace std;
 
 int main()
 {
-    Test3();
+    TestTicTacToe();
     return 0;
 }

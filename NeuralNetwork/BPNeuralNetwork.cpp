@@ -1,6 +1,7 @@
-#include "BPNeutralNetwork.h"
+#include "BPNeuralNetwork.h"
 #include <cmath>
 #include <iostream>
+#include <stdlib.h>
 using namespace std;
 
 double Sigmoid(double x)
@@ -17,12 +18,12 @@ double Square(double x)
     return x * x;
 }
 
-BPNeutralNetwork::BPNeutralNetwork(size_t numOfInputs,
-                                   vector<size_t> numOfHidden,
-                                   size_t numOfOutputs)
+BPNeuralNetwork::BPNeuralNetwork(size_t numOfInputs, vector<size_t> numOfHidden,
+                                 size_t numOfOutputs)
     : inputLayer(numOfInputs), hiddenLayers(numOfHidden.size()),
       outputLayer(numOfOutputs), weights(1 + numOfHidden.size()),
-      hiddenErrors(numOfHidden.size()), outputErrors(numOfOutputs)
+      hiddenErrors(numOfHidden.size()), outputErrors(numOfOutputs),
+      hiddenBiasErrors(numOfHidden.size())
 {
     if (numOfHidden.size() < 1)
     {
@@ -52,12 +53,21 @@ BPNeutralNetwork::BPNeutralNetwork(size_t numOfInputs,
             Matrix& matrix = weights.at(i);
             hiddenErrors.at(i - 1) =
                 Matrix(matrix.RowCount(), matrix.ColumnCount());
+            hiddenBiasErrors.at(i - 1) = NumericVector(matrix.ColumnCount());
         }
         RandomizeWeights();
     }
 }
 
-void BPNeutralNetwork::SetInputLayer(NumericVector input, double intercept)
+void BPNeuralNetwork::SetInputLayer(NumericVector input)
+{
+    for (size_t i = 0; i < input.size(); i++)
+    {
+        inputLayer.At(i) = input.at(i);
+    }
+}
+
+void BPNeuralNetwork::SetInputLayer(NumericVector input, double intercept)
 {
     for (size_t i = 0; i < input.size(); i++)
     {
@@ -66,8 +76,8 @@ void BPNeutralNetwork::SetInputLayer(NumericVector input, double intercept)
     inputLayer.intercept = intercept;
 }
 
-void BPNeutralNetwork::SetHiddenLayer(size_t k, NumericVector hidden,
-                                      double intercept)
+void BPNeuralNetwork::SetHiddenLayer(size_t k, NumericVector hidden,
+                                     double intercept)
 {
     for (size_t i = 0; i < hidden.size(); i++)
     {
@@ -76,19 +86,19 @@ void BPNeutralNetwork::SetHiddenLayer(size_t k, NumericVector hidden,
     hiddenLayers.at(k).intercept = intercept;
 }
 
-void BPNeutralNetwork::SetWeight(size_t i, Matrix matrix)
+void BPNeuralNetwork::SetWeight(size_t i, Matrix matrix)
 {
     weights.at(i) = matrix;
 }
 
-void BPNeutralNetwork::FeedForward()
+void BPNeuralNetwork::FeedForward()
 {
     FeedForwardInput();
     FeedForwardHidden();
     FeedForwardOutput();
 }
 
-void BPNeutralNetwork::FeedForwardInput()
+void BPNeuralNetwork::FeedForwardInput()
 {
     Matrix& matrix = weights.at(0);
     Layer& firstHiddenLayer = hiddenLayers.at(0);
@@ -103,7 +113,7 @@ void BPNeutralNetwork::FeedForwardInput()
     }
 }
 
-void BPNeutralNetwork::FeedForwardHidden()
+void BPNeuralNetwork::FeedForwardHidden()
 {
     for (size_t k = 0; k < hiddenLayers.size() - 1; k++)
     {
@@ -121,7 +131,7 @@ void BPNeutralNetwork::FeedForwardHidden()
     }
 }
 
-void BPNeutralNetwork::FeedForwardOutput()
+void BPNeuralNetwork::FeedForwardOutput()
 {
     Matrix& matrix = weights.at(weights.size() - 1);
     for (size_t j = 0; j < outputLayer.ValuesSize(); j++)
@@ -136,20 +146,21 @@ void BPNeutralNetwork::FeedForwardOutput()
     }
 }
 
-void BPNeutralNetwork::ComputeErrors(NumericVector target)
+void BPNeuralNetwork::ComputeErrors(NumericVector target)
 {
     ComputeOutputErrors(target);
     ComputeHiddenErrors();
     ComputeInputErrors();
 }
 
-void BPNeutralNetwork::ComputeOutputErrors(NumericVector& target)
+void BPNeuralNetwork::ComputeOutputErrors(NumericVector& target)
 {
     //    cout << "computing output errors" << endl;
     Matrix& lastHiddenErrors = hiddenErrors.at(hiddenErrors.size() - 1);
     Layer& lastHiddenLayer = hiddenLayers.at(hiddenLayers.size() - 1);
     Matrix& lastWeights = weights.at(weights.size() - 1);
-
+    NumericVector& lastHiddenBiasErrors =
+        hiddenBiasErrors.at(hiddenBiasErrors.size() - 1);
     for (size_t j = 0; j < outputLayer.ValuesSize(); j++)
     {
         double out = outputLayer.At(j);
@@ -166,11 +177,19 @@ void BPNeutralNetwork::ComputeOutputErrors(NumericVector& target)
             lastWeights(i, j) = old_weight - learningRate * total_error_w;
             lastHiddenErrors(i, j) = total_error_out * out_net * old_weight;
         }
+        /* adjust bias */
+        double old_intercept = lastHiddenLayer.intercept;
+        double total_error_intercept =
+            total_error_out * out_net * old_intercept;
+        lastHiddenLayer.intercept =
+            old_intercept - learningRate * total_error_intercept;
+        lastHiddenBiasErrors.at(j) = total_error_out * out_net * old_intercept;
     }
 }
 
-void BPNeutralNetwork::ComputeHiddenErrors()
+void BPNeuralNetwork::ComputeHiddenErrors()
 {
+
     //    cout << "computing hidden errors" << endl;
 
     for (size_t k = hiddenLayers.size() - 1; k > 0; k--)
@@ -182,43 +201,66 @@ void BPNeutralNetwork::ComputeHiddenErrors()
 
         for (size_t j = 0; j < nextHiddenLayer.ValuesSize(); j++)
         {
+            double out_net = DerivedSigmoid(nextHiddenLayer.At(j));
             for (size_t i = 0; i < previousHiddenLayer.ValuesSize(); i++)
             {
                 double total_error_out = nextHiddenErrors.SumOfRow(i);
-                double out_net = DerivedSigmoid(nextHiddenLayer.At(j));
+
                 double total_error_weight =
                     total_error_out * out_net * previousHiddenLayer.At(i);
                 double old_weight = previousHiddenWeights(i, j);
                 previousHiddenWeights(i, j) =
                     old_weight - learningRate * total_error_weight;
             }
+
+            /* adjust bias */
+            {
+                double total_error_out =
+                    SumNumericVector(hiddenBiasErrors.at(k));
+                double old_intercept = previousHiddenLayer.intercept;
+                double total_error_weight =
+                    total_error_out * out_net * old_intercept;
+                hiddenBiasErrors.at(k - 1).at(j) =
+                    old_intercept - learningRate * total_error_weight;
+            }
         }
     }
 }
 
-void BPNeutralNetwork::ComputeInputErrors()
+void BPNeuralNetwork::ComputeInputErrors()
 {
     //    cout << "computing input errors" << endl;
     Matrix& firstHiddenErrors = hiddenErrors.at(0);
 
     Layer& firstHiddenLayer = hiddenLayers.at(0);
     Matrix& inputWeights = weights.at(0);
+    NumericVector& firstHiddenBiasErrors = hiddenBiasErrors.at(0);
 
     for (size_t j = 0; j < firstHiddenErrors.RowCount(); j++)
     {
+        double out_net = DerivedSigmoid(firstHiddenLayer.At(j));
         for (size_t i = 0; i < inputLayer.ValuesSize(); i++)
         {
             double total_error_out = firstHiddenErrors.SumOfRow(i);
-            double out_net = DerivedSigmoid(firstHiddenLayer.At(j));
             double total_error_weight =
                 total_error_out * out_net * inputLayer.At(i);
             double old_weight = inputWeights(i, j);
             inputWeights(i, j) = old_weight - learningRate * total_error_weight;
         }
+
+        /* adjust bias */
+        {
+            double old_intercept = inputLayer.intercept;
+            double total_error_out = SumNumericVector(firstHiddenBiasErrors);
+            double total_error_weight =
+                total_error_out * out_net * old_intercept;
+            inputLayer.intercept =
+                old_intercept - learningRate * total_error_weight;
+        }
     }
 }
 
-void BPNeutralNetwork::Display()
+void BPNeuralNetwork::Display()
 {
     cout << "************* start displaying *************" << endl;
     size_t i = 0;
@@ -242,15 +284,20 @@ void BPNeutralNetwork::Display()
     cout << "************* end displaying *************" << endl;
 }
 
-void BPNeutralNetwork::RandomizeWeights()
+void BPNeuralNetwork::RandomizeWeights()
 {
     for (Matrix& item : weights)
     {
         item.RandomSet();
     }
+    inputLayer.intercept = rand() / double(RAND_MAX);
+    for (Layer& layer : hiddenLayers)
+    {
+        layer.intercept = rand() / double(RAND_MAX);
+    }
 }
 
-double BPNeutralNetwork::TotalErrorSquare()
+double BPNeuralNetwork::TotalErrorSquare()
 {
     double sum = 0.0;
     for (double item : outputErrors)
@@ -258,4 +305,58 @@ double BPNeutralNetwork::TotalErrorSquare()
         sum += Square(item);
     }
     return sum;
+}
+
+double SumNumericVector(vector<double>& vec)
+{
+    double sum = 0.0;
+    for (double& item : vec)
+    {
+        sum = sum + item;
+    }
+    return sum;
+}
+
+double MaxNumericVector(vector<double>& vec)
+{
+    double max = vec.at(0);
+    for (size_t i = 1; i < vec.size(); i++)
+    {
+        double& item = vec.at(i);
+        if (max < item)
+        {
+            max = item;
+        }
+    }
+    return max;
+}
+
+vector<double> Standardize(vector<double>& input)
+{
+    double average = AverageNumericVector(input);
+    double max = MaxNumericVector(input);
+    cout << "average = " << average << endl;
+    cout << "max = " << max << endl;
+    vector<double> output(input.size());
+    for (size_t i = 0; i < input.size(); i++)
+    {
+        output.at(i) = (input.at(i) - average) / max;
+    }
+    return output;
+}
+
+double AverageNumericVector(vector<double>& vec)
+{
+    double sum = SumNumericVector(vec);
+    return sum / double(vec.size());
+}
+
+void DisplayNumericVector(vector<double>& input)
+{
+    cout << "vector(" << input.size() << "): " << endl;
+    for (double& item : input)
+    {
+        cout << item << "  ";
+    }
+    cout << endl;
 }

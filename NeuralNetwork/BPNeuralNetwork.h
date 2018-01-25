@@ -1,5 +1,5 @@
-#ifndef BPNEUTRALNETWORK_H
-#define BPNEUTRALNETWORK_H
+#ifndef BPNEURALNETWORK_H
+#define BPNEURALNETWORK_H
 
 #include "Layer.h"
 #include "Matrix.h"
@@ -14,7 +14,7 @@ double Sigmoid(double x);
 double DerivedSigmoid(double x);
 double Square(double x);
 
-class BPNeutralNetwork
+class BPNeuralNetwork
 {
 public:
     double learningRate = 0.5;
@@ -27,8 +27,11 @@ public:
     NumericVector inputErrors;
     MatrixList hiddenErrors;
     NumericVector outputErrors;
-    BPNeutralNetwork(size_t numOfInputs, vector<size_t> numOfHidden,
-                     size_t numOfOutputs);
+    vector<NumericVector> hiddenBiasErrors;
+
+    BPNeuralNetwork(size_t numOfInputs, vector<size_t> numOfHidden,
+                    size_t numOfOutputs);
+    void SetInputLayer(NumericVector input);
     void SetInputLayer(NumericVector input, double intercept);
     void SetHiddenLayer(size_t k, NumericVector hidden, double intercept);
     void SetWeight(size_t i, Matrix matrix);
@@ -51,4 +54,9 @@ private:
     void ComputeInputErrors();
 };
 
-#endif // BPNEUTRALNETWORK_H
+double SumNumericVector(vector<double>& vec);
+double MaxNumericVector(vector<double>& vec);
+double AverageNumericVector(vector<double>& vec);
+vector<double> Standardize(vector<double>& input);
+void DisplayNumericVector(vector<double>& input);
+#endif // BPNEURALNETWORK_H

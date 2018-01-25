@@ -4,13 +4,13 @@ CONFIG -= app_bundle
 CONFIG -= qt
 
 SOURCES += main.cpp \
-    BPNeutralNetwork.cpp \
+    BPNeuralNetwork.cpp \
     Matrix.cpp \
     Layer.cpp \
     Test.cpp
 
 HEADERS += \
-    BPNeutralNetwork.h \
+    BPNeuralNetwork.h \
     Matrix.h \
     Layer.h \
     Test.h

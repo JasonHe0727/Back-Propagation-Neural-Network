@@ -1,362 +1,173 @@
-#include "BPNeuralNetwork.h"
+﻿#include "BPNeuralNetwork.hpp"
 #include <cmath>
 #include <iostream>
-#include <stdlib.h>
+#include <random>
+//#define print(name, matrix)                                                    \
+//    cout << "(" << __LINE__ << ") -> " << name << ":" << endl << matrix << endl;
+
 using namespace std;
 
-double Sigmoid(double x)
-{
-    return 1.0 / (1.0 + exp(-x));
-}
-
-double DerivedSigmoid(double x)
-{
-    return x * (1 - x);
-}
-double Square(double x)
-{
-    return x * x;
-}
-
-BPNeuralNetwork::BPNeuralNetwork(size_t numOfInputs, vector<size_t> numOfHidden,
-                                 size_t numOfOutputs)
-    : inputLayer(numOfInputs), hiddenLayers(numOfHidden.size()),
-      outputLayer(numOfOutputs), weights(1 + numOfHidden.size()),
-      hiddenErrors(numOfHidden.size()), outputErrors(numOfOutputs),
-      hiddenBiasErrors(numOfHidden.size())
+BPNeuralNetwork::BPNeuralNetwork(int numOfInput, vector<int> numOfHidden,
+                                 int numOfOutput)
+    : input(numOfInput, 1)
+    , hidden(numOfHidden.size())
+    , output(numOfOutput, 1)
+    , weights(numOfHidden.size() + 1)
+    , biases(numOfHidden.size() + 1)
+    , deltas(numOfHidden.size() + 1)
 {
     if (numOfHidden.size() < 1)
     {
-        throw "The number of hidden layers should be greater than one.";
+        throw "There should be at least one hidden layer";
     }
     else
     {
+        weights.at(0) = Matrix<double>(numOfHidden.at(0), numOfInput);
+        biases.at(0) = Matrix<double>::RowVector(numOfHidden.at(0));
+        deltas.at(0) = Matrix<double>::RowVector(numOfHidden.at(0));
 
-        weights.at(0) = Matrix(inputLayer.TotalSize(), numOfHidden.at(0));
-        for (size_t i = 0; i < numOfHidden.size(); i++)
+        for (size_t i = 1; i < numOfHidden.size(); i++)
         {
-            hiddenLayers.at(i) = Layer(numOfHidden.at(i));
+            weights.at(i) =
+                Matrix<double>(numOfHidden.at(i), numOfHidden.at(i - 1));
+            biases.at(i) = Matrix<double>::RowVector(numOfHidden.at(i));
+            deltas.at(i) = Matrix<double>::RowVector(numOfHidden.at(i));
         }
-        for (size_t i = 1; i < weights.size() - 1; i++)
+        weights.at(numOfHidden.size()) =
+            Matrix<double>(numOfOutput, Last(numOfHidden));
+        biases.at(numOfHidden.size()) = Matrix<double>::RowVector(numOfOutput);
+        deltas.at(numOfHidden.size()) = Matrix<double>::RowVector(numOfOutput);
+
+        for (size_t i = 0; i < hidden.size(); i++)
         {
-            size_t nRows = hiddenLayers.at(i - 1).ValuesSize();
-            size_t nCols = numOfHidden.at(i);
-            weights.at(i) = Matrix(nRows, nCols);
+            hidden.at(i) = Matrix<double>::RowVector(numOfHidden.at(i));
         }
-        Layer& lastHiddenLayer = hiddenLayers.at(hiddenLayers.size() - 1);
-
-        weights.at(weights.size() - 1) =
-            Matrix(lastHiddenLayer.ValuesSize(), outputLayer.ValuesSize());
-
-        for (size_t i = 1; i < weights.size(); i++)
+        for (Matrix<double>& item : weights)
         {
-            Matrix& matrix = weights.at(i);
-            hiddenErrors.at(i - 1) =
-                Matrix(matrix.RowCount(), matrix.ColumnCount());
-            hiddenBiasErrors.at(i - 1) = NumericVector(matrix.ColumnCount());
+            SetRandom(item);
         }
-        RandomizeWeights();
+        for (Matrix<double>& item : biases)
+        {
+            SetRandom(item);
+        }
     }
-}
-
-void BPNeuralNetwork::SetInputLayer(NumericVector input)
-{
-    for (size_t i = 0; i < input.size(); i++)
-    {
-        inputLayer.At(i) = input.at(i);
-    }
-}
-
-void BPNeuralNetwork::SetInputLayer(NumericVector input, double intercept)
-{
-    for (size_t i = 0; i < input.size(); i++)
-    {
-        inputLayer.At(i) = input.at(i);
-    }
-    inputLayer.intercept = intercept;
-}
-
-void BPNeuralNetwork::SetHiddenLayer(size_t k, NumericVector hidden,
-                                     double intercept)
-{
-    for (size_t i = 0; i < hidden.size(); i++)
-    {
-        hiddenLayers.at(k).At(i) = hidden.at(i);
-    }
-    hiddenLayers.at(k).intercept = intercept;
-}
-
-void BPNeuralNetwork::SetWeight(size_t i, Matrix matrix)
-{
-    weights.at(i) = matrix;
 }
 
 void BPNeuralNetwork::FeedForward()
 {
-    FeedForwardInput();
-    FeedForwardHidden();
-    FeedForwardOutput();
+    First(hidden) = Activte(First(weights) * input + First(biases));
+    for (size_t i = 1; i < hidden.size(); i++)
+    {
+        hidden.at(i) = Activte(weights.at(i) * hidden.at(i - 1) + biases.at(i));
+    }
+    output = Activte(Last(weights) * Last(hidden) + Last(biases));
 }
 
-void BPNeuralNetwork::FeedForwardInput()
+void BPNeuralNetwork::BackpropagationToOutputLayer(
+    const Matrix<double>& targets)
 {
-    Matrix& matrix = weights.at(0);
-    Layer& firstHiddenLayer = hiddenLayers.at(0);
-    for (size_t j = 0; j < firstHiddenLayer.ValuesSize(); j++)
+    Matrix<double> errorFactor =
+        targets.Apply(output, [](double x, double y) { return -(x - y); });
+
+    Last(deltas) = output.Apply([](double x) { return x * (1 - x); })
+                       .DotMultiply(errorFactor);
+    BackpropagationToHiddenLayers();
+    UpdateWeights();
+}
+
+void BPNeuralNetwork::BackpropagationToHiddenLayers()
+{
+    for (int k = static_cast<int>(hidden.size() - 1); k >= 0; k--)
     {
-        double sum = 0.0;
-        for (size_t i = 0; i < inputLayer.ValuesSize(); i++)
-        {
-            sum = sum + inputLayer.At(i) * matrix(i, j);
-        }
-        firstHiddenLayer.At(j) = Sigmoid(sum + inputLayer.intercept);
+        size_t uk = static_cast<size_t>(k);
+        Matrix<double> errorFactor =
+            (deltas.at(uk + 1).Transpose() * weights.at(uk + 1)).Transpose();
+        deltas.at(uk) = hidden.at(uk)
+                            .Apply([](double x) { return x * (1 - x); })
+                            .DotMultiply(errorFactor);
     }
 }
 
-void BPNeuralNetwork::FeedForwardHidden()
+void BPNeuralNetwork::UpdateWeights()
 {
-    for (size_t k = 0; k < hiddenLayers.size() - 1; k++)
     {
-        Matrix& matrix = weights.at(k + 1);
-        for (size_t j = 0; j < hiddenLayers.at(k + 1).ValuesSize(); j++)
+        Last(biases) = Last(biases) - learningRate * Last(deltas);
+        Matrix<double>& weight = Last(weights);
+        for (int i = 0; i < weight.Rows(); i++)
         {
-            double sum = 0.0;
-            for (size_t i = 0; i < hiddenLayers.at(k).ValuesSize(); i++)
+            for (int j = 0; j < weight.Cols(); j++)
             {
-                sum = sum + hiddenLayers.at(k).At(i) * matrix(i, j);
+                weight(i, j) = weight(i, j) - learningRate *
+                                                  Last(hidden)(0, j) *
+                                                  Last(deltas)(i);
             }
-            hiddenLayers.at(k + 1).At(j) =
-                Sigmoid(sum + hiddenLayers.at(k).intercept);
         }
     }
-}
-
-void BPNeuralNetwork::FeedForwardOutput()
-{
-    Matrix& matrix = weights.at(weights.size() - 1);
-    for (size_t j = 0; j < outputLayer.ValuesSize(); j++)
+    for (int k = static_cast<int>(hidden.size() - 2); k >= 0; k--)
     {
-        double sum = 0.0;
-        Layer& lastHiddenLayer = hiddenLayers.at(hiddenLayers.size() - 1);
-        for (size_t i = 0; i < lastHiddenLayer.ValuesSize(); i++)
+        size_t uk = static_cast<size_t>(k);
+        biases.at(uk + 1) =
+            biases.at(uk + 1) - learningRate * deltas.at(uk + 1);
+        Matrix<double>& weight = weights.at(uk + 1);
+
+        for (int i = 0; i < weight.Rows(); i++)
         {
-            sum = sum + lastHiddenLayer.At(i) * matrix(i, j);
-        }
-        outputLayer.At(j) = Sigmoid(sum + lastHiddenLayer.intercept);
-    }
-}
-
-void BPNeuralNetwork::ComputeErrors(NumericVector target)
-{
-    ComputeOutputErrors(target);
-    ComputeHiddenErrors();
-    ComputeInputErrors();
-}
-
-void BPNeuralNetwork::ComputeOutputErrors(NumericVector& target)
-{
-    //    cout << "computing output errors" << endl;
-    Matrix& lastHiddenErrors = hiddenErrors.at(hiddenErrors.size() - 1);
-    Layer& lastHiddenLayer = hiddenLayers.at(hiddenLayers.size() - 1);
-    Matrix& lastWeights = weights.at(weights.size() - 1);
-    NumericVector& lastHiddenBiasErrors =
-        hiddenBiasErrors.at(hiddenBiasErrors.size() - 1);
-    for (size_t j = 0; j < outputLayer.ValuesSize(); j++)
-    {
-        double out = outputLayer.At(j);
-        double total_error_out = -(target.at(j) - out);
-        double out_net = DerivedSigmoid(out);
-
-        //        cout << "Total Error: " << total_error_out << endl;
-        outputErrors.at(j) = total_error_out;
-        for (size_t i = 0; i < lastHiddenErrors.RowCount(); i++)
-        {
-            double net_w = lastHiddenLayer.At(i);
-            double total_error_w = total_error_out * out_net * net_w;
-            double old_weight = lastWeights(i, j);
-            lastWeights(i, j) = old_weight - learningRate * total_error_w;
-            lastHiddenErrors(i, j) = total_error_out * out_net * old_weight;
-        }
-        /* adjust bias */
-        double old_intercept = lastHiddenLayer.intercept;
-        double total_error_intercept =
-            total_error_out * out_net * old_intercept;
-        lastHiddenLayer.intercept =
-            old_intercept - learningRate * total_error_intercept;
-        lastHiddenBiasErrors.at(j) = total_error_out * out_net * old_intercept;
-    }
-}
-
-void BPNeuralNetwork::ComputeHiddenErrors()
-{
-
-    //    cout << "computing hidden errors" << endl;
-
-    for (size_t k = hiddenLayers.size() - 1; k > 0; k--)
-    {
-        Matrix& nextHiddenErrors = hiddenErrors.at(k);
-        Layer& nextHiddenLayer = hiddenLayers.at(k);
-        Matrix& previousHiddenWeights = weights.at(k - 1);
-        Layer& previousHiddenLayer = hiddenLayers.at(k - 1);
-
-        for (size_t j = 0; j < nextHiddenLayer.ValuesSize(); j++)
-        {
-            double out_net = DerivedSigmoid(nextHiddenLayer.At(j));
-            for (size_t i = 0; i < previousHiddenLayer.ValuesSize(); i++)
+            for (int j = 0; j < weight.Cols(); j++)
             {
-                double total_error_out = nextHiddenErrors.SumOfRow(i);
-
-                double total_error_weight =
-                    total_error_out * out_net * previousHiddenLayer.At(i);
-                double old_weight = previousHiddenWeights(i, j);
-                previousHiddenWeights(i, j) =
-                    old_weight - learningRate * total_error_weight;
+                weight(i, j) = weight(i, j) - learningRate *
+                                                  hidden.at(uk)(0, j) *
+                                                  deltas.at(uk + 1)(i);
             }
-
-            /* adjust bias */
+        }
+    }
+    {
+        First(biases) = First(biases) - learningRate * First(deltas);
+        Matrix<double>& weight = First(weights);
+        for (int i = 0; i < weight.Rows(); i++)
+        {
+            for (int j = 0; j < weight.Cols(); j++)
             {
-                double total_error_out =
-                    SumNumericVector(hiddenBiasErrors.at(k));
-                double old_intercept = previousHiddenLayer.intercept;
-                double total_error_weight =
-                    total_error_out * out_net * old_intercept;
-                hiddenBiasErrors.at(k - 1).at(j) =
-                    old_intercept - learningRate * total_error_weight;
+                weight(i, j) = weight(i, j) -
+                               learningRate * input(0, j) * First(deltas)(i);
             }
         }
     }
 }
 
-void BPNeuralNetwork::ComputeInputErrors()
+Matrix<double> BPNeuralNetwork::CalculateError(const Matrix<double>& target,
+                                               const Matrix<double>& output)
 {
-    //    cout << "computing input errors" << endl;
-    Matrix& firstHiddenErrors = hiddenErrors.at(0);
-
-    Layer& firstHiddenLayer = hiddenLayers.at(0);
-    Matrix& inputWeights = weights.at(0);
-    NumericVector& firstHiddenBiasErrors = hiddenBiasErrors.at(0);
-
-    for (size_t j = 0; j < firstHiddenErrors.RowCount(); j++)
-    {
-        double out_net = DerivedSigmoid(firstHiddenLayer.At(j));
-        for (size_t i = 0; i < inputLayer.ValuesSize(); i++)
-        {
-            double total_error_out = firstHiddenErrors.SumOfRow(i);
-            double total_error_weight =
-                total_error_out * out_net * inputLayer.At(i);
-            double old_weight = inputWeights(i, j);
-            inputWeights(i, j) = old_weight - learningRate * total_error_weight;
-        }
-
-        /* adjust bias */
-        {
-            double old_intercept = inputLayer.intercept;
-            double total_error_out = SumNumericVector(firstHiddenBiasErrors);
-            double total_error_weight =
-                total_error_out * out_net * old_intercept;
-            inputLayer.intercept =
-                old_intercept - learningRate * total_error_weight;
-        }
-    }
+    return target.Apply(output, [](double x, double y) { return -(x - y); });
 }
 
-void BPNeuralNetwork::Display()
+Matrix<double> Activte(const Matrix<double>& matrix)
 {
-    cout << "************* start displaying *************" << endl;
-    size_t i = 0;
-    for (Matrix& item : weights)
-    {
-        cout << "Weight " << i << ": " << endl;
-        i++;
-        item.Display();
-    }
-    cout << endl << "input layer: " << endl;
-    cout << inputLayer;
-
-    cout << endl << "hidden layer: " << endl;
-    for (Layer& item : hiddenLayers)
-    {
-        cout << item;
-    }
-    cout << endl << "output layer: " << endl;
-    cout << outputLayer;
-
-    cout << "************* end displaying *************" << endl;
+    return matrix.Apply([](double x) { return 1.0 / (1.0 + std::exp(-x)); });
 }
 
-void BPNeuralNetwork::RandomizeWeights()
+Matrix<double> DerivativeActive(const Matrix<double>& matrix)
 {
-    for (Matrix& item : weights)
-    {
-        item.RandomSet();
-    }
-    inputLayer.intercept = rand() / double(RAND_MAX);
-    for (Layer& layer : hiddenLayers)
-    {
-        layer.intercept = rand() / double(RAND_MAX);
-    }
+    return matrix.Apply([](double x) { return x * (1.0 - x); });
 }
 
-double BPNeuralNetwork::TotalErrorSquare()
+Matrix<double> SumByColumns(Matrix<double>& matrix)
 {
-    double sum = 0.0;
-    for (double item : outputErrors)
+    Matrix<double> result(matrix.Cols(), 1);
+    for (int i = 0; i < matrix.Cols(); i++)
     {
-        sum += Square(item);
+        result(i, 0) = matrix.SumOfColumn(i);
     }
-    return sum;
+    return result;
 }
 
-double SumNumericVector(vector<double>& vec)
+void SetRandom(Matrix<double>& matrix)
 {
-    double sum = 0.0;
-    for (double& item : vec)
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dis(-1.0, 1.0);
+    int length = matrix.Rows() * matrix.Cols();
+    for (int i = 0; i < length; i++)
     {
-        sum = sum + item;
+        matrix(i) = dis(gen);
     }
-    return sum;
-}
-
-double MaxNumericVector(vector<double>& vec)
-{
-    double max = vec.at(0);
-    for (size_t i = 1; i < vec.size(); i++)
-    {
-        double& item = vec.at(i);
-        if (max < item)
-        {
-            max = item;
-        }
-    }
-    return max;
-}
-
-vector<double> Standardize(vector<double>& input)
-{
-    double average = AverageNumericVector(input);
-    double max = MaxNumericVector(input);
-    cout << "average = " << average << endl;
-    cout << "max = " << max << endl;
-    vector<double> output(input.size());
-    for (size_t i = 0; i < input.size(); i++)
-    {
-        output.at(i) = (input.at(i) - average) / max;
-    }
-    return output;
-}
-
-double AverageNumericVector(vector<double>& vec)
-{
-    double sum = SumNumericVector(vec);
-    return sum / double(vec.size());
-}
-
-void DisplayNumericVector(vector<double>& input)
-{
-    cout << "vector(" << input.size() << "): " << endl;
-    for (double& item : input)
-    {
-        cout << item << "  ";
-    }
-    cout << endl;
 }

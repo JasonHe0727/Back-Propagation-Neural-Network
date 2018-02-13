@@ -1,13 +1,10 @@
-#include "BPNeuralNetwork.h"
-#include "Layer.h"
-#include "Matrix.h"
-#include "Test.h"
+#include "Test.hpp"
 #include <iostream>
-#include <memory>
 using namespace std;
 
 int main()
 {
-    TestTicTacToe();
+    Test1();
+    cout << "Hello World!" << endl;
     return 0;
 }

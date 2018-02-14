@@ -521,7 +521,6 @@ Matrix<T> Matrix<T>::Apply(const TFunction& f) const
     }
     return result;
 }
-#endif // MATRIX_HPP
 
 template <typename T>
 template <typename TFunction>
@@ -535,3 +534,5 @@ Matrix<T> Matrix<T>::Apply(const Matrix<T>& other, const TFunction& f) const
     }
     return result;
 }
+
+#endif // MATRIX_HPP

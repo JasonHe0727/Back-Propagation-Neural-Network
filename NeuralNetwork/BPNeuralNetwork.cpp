@@ -2,9 +2,6 @@
 #include <cmath>
 #include <iostream>
 #include <random>
-//#define print(name, matrix)                                                    \
-//    cout << "(" << __LINE__ << ") -> " << name << ":" << endl << matrix << endl;
-
 using namespace std;
 
 BPNeuralNetwork::BPNeuralNetwork(int numOfInput, vector<int> numOfHidden,
@@ -38,17 +35,17 @@ BPNeuralNetwork::BPNeuralNetwork(int numOfInput, vector<int> numOfHidden,
         biases.at(numOfHidden.size()) = Matrix<double>::RowVector(numOfOutput);
         deltas.at(numOfHidden.size()) = Matrix<double>::RowVector(numOfOutput);
 
-        for (size_t i = 0; i < hidden.size(); i++)
+        for (size_t i = 0; i < numOfHidden.size(); i++)
         {
             hidden.at(i) = Matrix<double>::RowVector(numOfHidden.at(i));
         }
         for (Matrix<double>& item : weights)
         {
-            SetRandom(item);
+            RandomizeMatrix(item);
         }
         for (Matrix<double>& item : biases)
         {
-            SetRandom(item);
+            RandomizeMatrix(item);
         }
     }
 }
@@ -63,16 +60,20 @@ void BPNeuralNetwork::FeedForward()
     output = Activte(Last(weights) * Last(hidden) + Last(biases));
 }
 
+void BPNeuralNetwork::Backpropagation(const Matrix<double>& targets)
+{
+    BackpropagationToOutputLayer(targets);
+    BackpropagationToHiddenLayers();
+    UpdateWeights();
+}
+
 void BPNeuralNetwork::BackpropagationToOutputLayer(
     const Matrix<double>& targets)
 {
     Matrix<double> errorFactor =
         targets.Apply(output, [](double x, double y) { return -(x - y); });
 
-    Last(deltas) = output.Apply([](double x) { return x * (1 - x); })
-                       .DotMultiply(errorFactor);
-    BackpropagationToHiddenLayers();
-    UpdateWeights();
+    Last(deltas) = DerivativeActive(output).DotMultiply(errorFactor);
 }
 
 void BPNeuralNetwork::BackpropagationToHiddenLayers()
@@ -82,9 +83,8 @@ void BPNeuralNetwork::BackpropagationToHiddenLayers()
         size_t uk = static_cast<size_t>(k);
         Matrix<double> errorFactor =
             (deltas.at(uk + 1).Transpose() * weights.at(uk + 1)).Transpose();
-        deltas.at(uk) = hidden.at(uk)
-                            .Apply([](double x) { return x * (1 - x); })
-                            .DotMultiply(errorFactor);
+        deltas.at(uk) =
+            DerivativeActive(hidden.at(uk)).DotMultiply(errorFactor);
     }
 }
 
@@ -134,10 +134,16 @@ void BPNeuralNetwork::UpdateWeights()
     }
 }
 
-Matrix<double> BPNeuralNetwork::CalculateError(const Matrix<double>& target,
-                                               const Matrix<double>& output)
+void BPNeuralNetwork::RandomizeMatrix(Matrix<double>& matrix)
 {
-    return target.Apply(output, [](double x, double y) { return -(x - y); });
+    std::random_device rd;
+    std::mt19937 generator(rd());
+    std::uniform_real_distribution<> distribution(-1.0, 1.0);
+    int length = matrix.Rows() * matrix.Cols();
+    for (int i = 0; i < length; i++)
+    {
+        matrix(i) = distribution(generator);
+    }
 }
 
 Matrix<double> Activte(const Matrix<double>& matrix)
@@ -148,26 +154,4 @@ Matrix<double> Activte(const Matrix<double>& matrix)
 Matrix<double> DerivativeActive(const Matrix<double>& matrix)
 {
     return matrix.Apply([](double x) { return x * (1.0 - x); });
-}
-
-Matrix<double> SumByColumns(Matrix<double>& matrix)
-{
-    Matrix<double> result(matrix.Cols(), 1);
-    for (int i = 0; i < matrix.Cols(); i++)
-    {
-        result(i, 0) = matrix.SumOfColumn(i);
-    }
-    return result;
-}
-
-void SetRandom(Matrix<double>& matrix)
-{
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<> dis(-1.0, 1.0);
-    int length = matrix.Rows() * matrix.Cols();
-    for (int i = 0; i < length; i++)
-    {
-        matrix(i) = dis(gen);
-    }
 }

@@ -4,7 +4,7 @@ using namespace std;
 
 int main()
 {
-    Test1();
+    Test2();
     cout << "Hello World!" << endl;
     return 0;
 }

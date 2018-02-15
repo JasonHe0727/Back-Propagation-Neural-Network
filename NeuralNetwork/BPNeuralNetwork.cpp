@@ -52,12 +52,12 @@ BPNeuralNetwork::BPNeuralNetwork(int numOfInput, vector<int> numOfHidden,
 
 void BPNeuralNetwork::FeedForward()
 {
-    First(hidden) = Activte(First(weights) * input + First(biases));
+    Activte(First(hidden), First(weights) * input + First(biases));
     for (size_t i = 1; i < hidden.size(); i++)
     {
-        hidden.at(i) = Activte(weights.at(i) * hidden.at(i - 1) + biases.at(i));
+        Activte(hidden.at(i), weights.at(i) * hidden.at(i - 1) + biases.at(i));
     }
-    output = Activte(Last(weights) * Last(hidden) + Last(biases));
+    Activte(output, Last(weights) * Last(hidden) + Last(biases));
 }
 
 void BPNeuralNetwork::Backpropagation(const Matrix<double>& targets)
@@ -73,7 +73,12 @@ void BPNeuralNetwork::BackpropagationToOutputLayer(
     Matrix<double> errorFactor =
         targets.Apply(output, [](double x, double y) { return -(x - y); });
 
-    Last(deltas) = DerivativeActive(output).DotMultiply(errorFactor);
+    Matrix<double> derivative = DerivativeActive(output);
+    int length = derivative.Rows() * derivative.Cols();
+    for (int i = 0; i < length; i++)
+    {
+        Last(deltas)(i) = derivative(i) * errorFactor(i);
+    }
 }
 
 void BPNeuralNetwork::BackpropagationToHiddenLayers()
@@ -83,31 +88,28 @@ void BPNeuralNetwork::BackpropagationToHiddenLayers()
         size_t uk = static_cast<size_t>(k);
         Matrix<double> errorFactor =
             (deltas.at(uk + 1).Transpose() * weights.at(uk + 1)).Transpose();
-        deltas.at(uk) =
-            DerivativeActive(hidden.at(uk)).DotMultiply(errorFactor);
+        Matrix<double> derivative = DerivativeActive(hidden.at(uk));
+        int length = derivative.Rows() * derivative.Cols();
+        for (int i = 0; i < length; i++)
+        {
+            deltas.at(uk)(i) = derivative(i) * errorFactor(i);
+        }
     }
 }
 
 void BPNeuralNetwork::UpdateWeights()
 {
-    {
-        Last(biases) = Last(biases) - learningRate * Last(deltas);
-        Matrix<double>& weight = Last(weights);
-        for (int i = 0; i < weight.Rows(); i++)
-        {
-            for (int j = 0; j < weight.Cols(); j++)
-            {
-                weight(i, j) = weight(i, j) - learningRate *
-                                                  Last(hidden)(0, j) *
-                                                  Last(deltas)(i);
-            }
-        }
-    }
+    UpdateFirstWeights();
     for (int k = static_cast<int>(hidden.size() - 2); k >= 0; k--)
     {
         size_t uk = static_cast<size_t>(k);
-        biases.at(uk + 1) =
+        Matrix<double> newBias =
             biases.at(uk + 1) - learningRate * deltas.at(uk + 1);
+        int length = newBias.Rows() * newBias.Cols();
+        for (int i = 0; i < length; i++)
+        {
+            biases.at(uk + 1)(i) = newBias(i);
+        }
         Matrix<double>& weight = weights.at(uk + 1);
 
         for (int i = 0; i < weight.Rows(); i++)
@@ -120,16 +122,44 @@ void BPNeuralNetwork::UpdateWeights()
             }
         }
     }
+    UpdateLastWeights();
+}
+
+void BPNeuralNetwork::UpdateLastWeights()
+{
+
+    Matrix<double> newBias = Last(biases) - learningRate * Last(deltas);
+    int length = newBias.Rows() * newBias.Cols();
+    for (int i = 0; i < length; i++)
     {
-        First(biases) = First(biases) - learningRate * First(deltas);
-        Matrix<double>& weight = First(weights);
-        for (int i = 0; i < weight.Rows(); i++)
+        Last(biases)(i) = newBias(i);
+    }
+    Matrix<double>& weight = Last(weights);
+    for (int i = 0; i < weight.Rows(); i++)
+    {
+        for (int j = 0; j < weight.Cols(); j++)
         {
-            for (int j = 0; j < weight.Cols(); j++)
-            {
-                weight(i, j) = weight(i, j) -
-                               learningRate * input(0, j) * First(deltas)(i);
-            }
+            weight(i, j) = weight(i, j) -
+                           learningRate * Last(hidden)(0, j) * Last(deltas)(i);
+        }
+    }
+}
+
+void BPNeuralNetwork::UpdateFirstWeights()
+{
+    Matrix<double> newBias = First(biases) - learningRate * First(deltas);
+    int length = newBias.Rows() * newBias.Cols();
+    for (int i = 0; i < length; i++)
+    {
+        First(biases)(i) = newBias(i);
+    }
+    Matrix<double>& weight = First(weights);
+    for (int i = 0; i < weight.Rows(); i++)
+    {
+        for (int j = 0; j < weight.Cols(); j++)
+        {
+            weight(i, j) =
+                weight(i, j) - learningRate * input(0, j) * First(deltas)(i);
         }
     }
 }
@@ -146,9 +176,12 @@ void BPNeuralNetwork::RandomizeMatrix(Matrix<double>& matrix)
     }
 }
 
-Matrix<double> Activte(const Matrix<double>& matrix)
+void Activte(Matrix<double>& result, const Matrix<double>& matrix)
 {
-    return matrix.Apply([](double x) { return 1.0 / (1.0 + std::exp(-x)); });
+    for (int i = 0; i < matrix.Rows() * matrix.Cols(); i++)
+    {
+        result(i) = 1.0 / (1.0 + std::exp(-matrix(i)));
+    }
 }
 
 Matrix<double> DerivativeActive(const Matrix<double>& matrix)

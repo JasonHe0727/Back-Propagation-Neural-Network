@@ -157,7 +157,7 @@ Matrix<T>& Matrix<T>::operator=(const Matrix<T>& other)
 {
     nRows = other.nRows;
     nCols = other.nCols;
-    if (other.IsEmptyMatrix())
+    if (other.items == nullptr)
     {
         items = nullptr;
         return *this;
@@ -263,7 +263,7 @@ Matrix<T> Matrix<T>::DotMultiply(const Matrix<T>& other) const
 {
     if (nRows == other.nRows && nCols == other.nCols)
     {
-        Matrix result(nRows, nCols);
+        Matrix<double> result(nRows, nCols);
         int length = nRows * nCols;
         for (int i = 0; i < length; i++)
         {
@@ -397,15 +397,15 @@ template <typename T>
 Matrix<T>::Matrix(const Matrix<T>& other)
     : nRows{other.nRows}
     , nCols{other.nCols}
-    , items{new T[nRows * nCols]}
 {
-    if (other.IsEmptyMatrix())
+    if (other.items == nullptr)
     {
         items = nullptr;
     }
     else
     {
         int length = nRows * nCols;
+        items = new T[length];
         for (int i = 0; i < length; i++)
         {
             items[i] = other.items[i];
@@ -534,5 +534,4 @@ Matrix<T> Matrix<T>::Apply(const Matrix<T>& other, const TFunction& f) const
     }
     return result;
 }
-
 #endif // MATRIX_HPP

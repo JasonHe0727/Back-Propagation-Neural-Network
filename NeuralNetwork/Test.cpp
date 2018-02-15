@@ -33,7 +33,7 @@ void Test1()
     X.push_back(Matrix<double>(3, 1, {1, 1, 1}));
 
     vector<double> Y = {0, 1, 1, 0};
-    for (int i = 0; 1000; i++)
+    for (int i = 0; i < 10000; i++)
     {
         for (size_t j = 0; j < X.size(); j++)
         {

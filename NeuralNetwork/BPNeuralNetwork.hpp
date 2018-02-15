@@ -24,7 +24,8 @@ private:
     void BackpropagationToOutputLayer(const Matrix<double>& targets);
     void BackpropagationToHiddenLayers();
     void UpdateWeights();
-
+    void UpdateLastWeights();
+    void UpdateFirstWeights();
     void RandomizeMatrix(Matrix<double>& matrix);
 };
 
@@ -39,6 +40,6 @@ T& Last(vector<T>& vec)
     return vec.at(vec.size() - 1);
 }
 
-Matrix<double> Activte(const Matrix<double>& matrix);
+void Activte(Matrix<double>& result, const Matrix<double>& matrix);
 Matrix<double> DerivativeActive(const Matrix<double>& matrix);
 #endif // BPNEURALNETWORK_HPP
